@@ -40,3 +40,4 @@ git pull
 | `webinar-architect` | Проектирование вебинаров: Hormozi, слайды, скрипты |
 | `buyer-persona` | Сегменты аудитории, барьеры, decision trees |
 | `astro-content` | Справочник астрологии для контента |
+| `webinar-production` | Голос спикера, продукт, кейсы, пруфы |
