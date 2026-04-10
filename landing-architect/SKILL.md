@@ -319,6 +319,30 @@ const GC_BASE = 'https://course.vedantica.ru'
 // → t.me/Vedantica_bot?start={hash}__s4
 ```
 
+### КРИТИЧНО: Валидация full_name в GC (баг-ловушка)
+
+GC валидирует поле `formParams[full_name]` и отклоняет заказ с ошибкой `"Неверные символы в фамилии"` при:
+- Прочерке `-` или пустоте
+- Цифрах или точках
+- Email-подобных строках (`user.name`, `test@ya.ru`)
+- Словах короче 2 букв
+
+При этом GC возвращает HTTP 200 + `success: true`, но внутри:
+```json
+{ "data": { "formProcessed": false, "error": "Неверные символы в фамилии" } }
+```
+
+**Заказ НЕ создаётся, контакт НЕ формируется, процесс НЕ запускается** — но снаружи всё выглядит успешным. Легко пропустить.
+
+**Обязательно проверять:**
+```typescript
+if (!json.data?.formProcessed) {
+  throw new Error(json.data?.error || 'Form not processed')
+}
+```
+
+**Заглушка имени:** если форма не собирает имя (чтобы максимизировать CR), использовать `"Гость"` — проходит валидацию. НЕ использовать `"-"`, `""`, `"User"` + digits, email local-part.
+
 ### Типы виджетов GC (НЕ путать!)
 
 | Тип | Когда | Создаёт | Мессенджер-кнопки |
@@ -345,6 +369,8 @@ const GC_BASE = 'https://course.vedantica.ru'
 - **`/pl/api/processes`** — endpoint НЕ существует в GC API
 - **GC-страницы в iframe** — `X-Frame-Options: DENY`
 - **GC lite-виджет напрямую в React SPA** — скрипт ломает SPA, белая форма, redirect. НЕ встраивать
+- **full_name = `-`, `""`, `"test"`, цифры, точки** — GC отвергает с `formProcessed: false`, заказ тихо не создаётся
+- **Парсинг `Vedantica_bot?start=...` regex'ом из HTML виджета** — отдаёт гостевой хеш, не per-user. Использовать только `invitationHash` из `preParts` ответа сабмита
 
 ### Рабочий пример
 
