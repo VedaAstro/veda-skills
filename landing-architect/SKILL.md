@@ -160,14 +160,82 @@ curl -s "https://fal.run/fal-ai/ideogram/v3" \
 
 ## Оптимизация скорости загрузки
 
-**Цель:** < 2 секунд TTFB (каждая секунда задержки = -7% конверсии).
+**Цель:** LCP < 2.5 сек, INP < 200 мс, CLS < 0.1 (Core Web Vitals 2025+).
+Каждая секунда задержки = -7% конверсии.
 
-Чеклист:
-- [ ] Все изображения в WebP (не PNG/JPG) — экономия 60-90%
-- [ ] Фото кейсов: crop to square 200x200, webp q85 (5-15KB вместо 100KB+)
-- [ ] Иконки: max 256px по длинной стороне, webp q90, `loading="lazy"`
-- [ ] Нет внешних шрифтов (Cormorant Garamond + Inter уже в layout)
-- [ ] Статическая страница (SSG) — не SSR
+### Правила изображений
+
+| Ситуация | Правило |
+|---|---|
+| Форматы | Только WebP (не JPG/PNG) — экономия 60-90% |
+| Hero / LCP-элемент | `fetchPriority="high"` или Next.js `priority` |
+| Иконки | **Обязательно** проверить реальный размер файла. 20px иконка не должна весить 106KB. Конвертировать в нужный размер: `cwebp -q 85 source.png -o icon.webp` после ресайза через ffmpeg/sips |
+| Ниже fold | `loading="lazy"` — обязательно |
+| Фото кейсов | crop 200×200px, webp q82, 5-15KB макс |
+| Иконки секций | max 256px по длинной стороне, webp q85 |
+| Имена файлов | **Только латиница** — кириллические имена URL-encode ломают SEO и кэш CDN |
+
+**Ресайз иконки (copy-paste):**
+```bash
+# Ресайз через ffmpeg (webp → PNG → webp)
+ffmpeg -i logo.webp -vf scale=40:40 logo-tmp.png -y
+cwebp -q 85 logo-tmp.png -o logo.webp
+rm logo-tmp.png
+# Ресайз JPG/PNG → WebP
+cwebp -q 82 photo.jpg -o photo.webp
+```
+
+### Next.js Image: частые ошибки
+
+```tsx
+// ПЛОХО: Next.js без sizes выбирает max = 3840px для fill
+<Image src="..." fill />
+
+// ХОРОШО: всегда указывать sizes
+<Image src="..." fill sizes="(max-width: 1024px) 100vw, 40vw" />
+
+// Hero-изображение: всегда priority
+<Image src="..." priority sizes="(max-width: 768px) 100vw, 50vw" />
+```
+
+**next.config.ts — ограничить deviceSizes** (по умолчанию включает 2048 и 3840):
+```ts
+images: {
+  formats: ['image/avif', 'image/webp'],
+  deviceSizes: [640, 828, 1080, 1200, 1920],
+}
+```
+
+### React Hydration Error #418 — таймеры обратного отсчёта
+
+Таймер, запускающийся от `Date.now()` при SSR, ВСЕГДА даёт hydration mismatch — мигание и CLS.
+
+```tsx
+// ПЛОХО — SSR рендерит одно время, клиент другое
+const [now, setNow] = useState(() => Date.now())
+
+// ХОРОШО — null на сервере, реальное время только на клиенте
+const [now, setNow] = useState<number | null>(null)
+useEffect(() => {
+  setNow(Date.now())
+  const id = setInterval(() => setNow(Date.now()), 1000)
+  return () => clearInterval(id)
+}, [])
+// В рендере: показывать таймер только когда now !== null
+{now !== null && !expired && <CountdownDisplay ... />}
+```
+
+### Шрифты
+
+- Использовать только то, что уже в `app/layout.tsx` (Cormorant Garamond + Inter)
+- Каждый лишний woff2-файл = +20-80KB при первом визите
+- Проверить: `6+ шрифтовых файлов в Network` = подключены лишние начертания, убрать из конфига next/font
+
+### Статус страницы
+
+- [ ] SSG (статическая) — не SSR (серверный рендер на каждый запрос)
+- [ ] 0 console errors при открытии DevTools
+- [ ] TTFB < 300 мс
 
 ## Sticky CTA на мобилке
 
