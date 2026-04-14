@@ -18,7 +18,7 @@ Google Drive Folder ID: 1UwlBZVTPJ46wXqhUrXnlvb4dTxfGyXnM
 
 ## Каталог файлов
 
-Файл `CATALOG_STICKMAN.tsv` в корне папки. Формат: `filename\ttags\tdescription`. 405 записей. **Актуальный источник — смотри TSV-каталог, не скачивай всю папку.**
+Файл `CATALOG_STICKMAN.tsv` лежит в этой же папке `library/`. Формат: `filename\ttags\tdescription`. 405 записей. **Читай TSV напрямую, не скачивай картинки.**
 
 ---
 
