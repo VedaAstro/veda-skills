@@ -292,6 +292,80 @@ hr_scores:     id, candidate_id, stage, criterion, score, reasoning, created_at
 
 ---
 
+## HH-приглашение: правила текста
+
+### Правильный шаблон (бот: @hr_alexbot)
+```
+Здравствуйте! Посмотрели ваш профиль — интересный опыт.
+
+Приглашаем на первый этап: знакомство с нашим AI-агентом.
+Займёт ~10-15 минут, отвечать можно в удобном темпе.
+
+Переходите: https://t.me/hr_alexbot?start=hh_{neg_id}
+```
+
+### Правила копирайтинга
+- **Всегда приветствие** — без него выглядит как спам
+- **"AI-агент"**, не "Telegram-бот" — не обесценивать инструмент
+- **Принцип Зейгарник** — не раскрывать всё сразу (не говорить про "аналитическую задачу", "скрининг", этапы). Лёгкий вход → потом внутри бот раскрывает следующие шаги
+- **Не "скрининг"** — слово создаёт ощущение отбора/проверки, снижает конверсию в переход
+
+### Антипаттерны
+- ❌ `короткий скрининг через Telegram-бота`
+- ❌ `задаст вопросы и предложит аналитическую задачу`
+- ❌ отсутствие приветствия
+- ❌ неверный username бота
+
+---
+
+## Решения об отказе
+
+### Кто принимает решения
+**Всегда Алекс**, не автоматически:
+- A/B кандидаты (высокий/средний скоринг) → уведомление с полным scorecard + кнопки `✅ Отправить тестовое | ❌ Не подходит`
+- C кандидаты (низкий скоринг, FAIL) → авто-отказ кандидату + короткое уведомление Алексу
+- Pre-screen C → авто-отказ через HH API (до входа в бот)
+
+### HH rejection API (правильная последовательность)
+```python
+# НЕПРАВИЛЬНО — вернёт 403:
+PUT /negotiations/discard/{neg_id}
+PUT /negotiations/consider/{neg_id}
+
+# ПРАВИЛЬНО — сначала перевести в phone_interview, потом discard:
+PUT /negotiations/phone_interview/{neg_id}
+PUT /negotiations/discard_by_employer/{neg_id}  # body: {"message": "текст отказа"}
+```
+
+---
+
+## Технические уроки (бот @hr_alexbot)
+
+### Критичные баги и фиксы
+
+**Баг: null content от OpenRouter → crash**
+- Симптом: `AttributeError: 'NoneType' has no attribute 'strip'` → бот отвечает "технические неполадки"
+- Причина: Claude Sonnet через OpenRouter иногда возвращает `content: null` с `finish_reason: stop`
+- Фикс: `_call_agent_text` ретраит 3 раза с exponential backoff; `_openrouter_call` логирует и бросает RuntimeError
+
+**Баг: кандидат перезашёл по /start не ответив на последний вопрос**
+- Симптом: history заканчивается на сообщении агента → передаём Claude conversation `[user, assistant, user, assistant]` → null content
+- Фикс: если `messages[-1].role == "agent"` → сразу вернуть последний вопрос без API-вызова
+
+**Баг: неверный username бота в приглашениях**
+- Правильный: `@hr_alexbot` (не `@veda_hr_bot`)
+- Константа `BOT_USERNAME = "hr_alexbot"` в `/root/hr-bot/bot.py`
+
+### Деплой hr-bot
+```bash
+# На сервере нет git remote — только rsync:
+rsync -az --exclude=venv/ --exclude='.git/' --exclude='__pycache__' \
+  /Users/alex/Projects/platform/hr-bot/ root@109.73.194.217:/root/hr-bot/
+ssh root@109.73.194.217 "pm2 restart hr-bot"
+```
+
+---
+
 ## Референс-реализация
 
 Полный roadmap реализации AI-воронки для найма Growth-маркетолога Vedantica:

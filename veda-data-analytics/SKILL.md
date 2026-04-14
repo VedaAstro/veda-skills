@@ -1,264 +1,255 @@
 ---
 name: veda-data-analytics
-description: Техническая реализация дашбордов и визуализации данных. Стек: Recharts + AG Grid + Untitled UI. Методология PGAC берется из ceo-consulting, здесь только визуализация и API shell.
+description: Дашборды из готовых UUI компонентов + Recharts. Cookbook с copy-paste кодом. Управленческая методология (PGAC) - в ceo-consulting.
 ---
 
-# Veda Data Analytics — Техническая реализация
+# Veda Data Analytics - Dashboard Cookbook
 
-> Управленческая методология (PGAC, Result/Driver/Health, декомпозиция прибыли, management OS) живет в `ceo-consulting`.
-> Этот скилл — только про реализацию: какой chart, какой компонент, как связать с API.
-> Здесь НЕ живут: `one-on-one`, `weekly review`, `maturity`, `performance review`, управленческие ритуалы.
-
----
-
-## 1. Привязка цикла PGAC к дашборду
-
-Каждая фаза PGAC → конкретный визуальный паттерн:
-
-| Фаза | Что показывать | Паттерн |
-|------|---------------|---------|
-| PLAN | План по result + декомпозиция на drivers | Scorecard row: план / факт / ГЭП |
-| GAP: какой driver | Декомпозиция ГЭПа | KPI Tree или table с подсветкой просевшего |
-| GAP: тренд | Driver за 4-8 недель | Line chart (тренд, не точка) |
-| GAP: цена | Потери в ₽ | Badge/callout: "потери: 47 000 ₽/мес" |
-| GAP: RCA | Почему просел | Health-метрики за drill-down |
-| ACT | Driver + задача + прогноз | Action card или строка в таблице |
-| CHECK | Прогноз vs факт | Bar chart: прогноз / факт, delta |
+> **ГЛАВНОЕ ПРАВИЛО**: каждый элемент дашборда = готовый UUI компонент.
+> Ручная верстка карточек, progress bars, таблиц, графиков **ЗАПРЕЩЕНА**.
+> Конкретный код каждого компонента: `reference/dashboard-components.md`
 
 ---
 
-## 2. Chart Selection Rules
+## Шаг 0: Перед написанием любого кода
 
-| Вопрос | Тип | Компонент |
-|--------|-----|-----------|
-| Как меняется во времени? | Line/Area | `<LineChart>` / `<AreaChart>` |
-| Как соотносятся шаги воронки? | Horizontal Bar (убывающие) | `<BarChart layout="vertical">` |
-| Кто лучший / хуже нормы? | Scorecard + Bar | AG Grid mini-bar cell |
-| Как распределены значения? | Bar (sorted desc) | `<BarChart>` |
-| Сравнение двух периодов | Line (два ряда) | `<LineChart>` с двумя `<Line>` |
-| Состав целого | Stacked Bar | `<BarChart>` stacked |
-| План vs Факт | Grouped Bar | `<BarChart>` с двумя `<Bar>` |
-| Прогноз vs Факт (CHECK) | Bar + reference line | `<BarChart>` + `<ReferenceLine>` |
-
-**NEVER**: pie chart, donut chart — человек не считывает углы точно.
+```
+1. READ reference/dashboard-templates.md    (ГОТОВЫЕ ШАБЛОНЫ — скопируй, подставь данные)
+2. READ reference/dashboard-components.md   (компоненты с props — если нужен элемент не из шаблона)
+3. READ reference/dashboard-architecture.md (принципы — если нужно обосновать решение или ревью)
+4. ПРОВЕРЬ: установлены ли UUI компоненты в проекте?
+   ls components/application/metrics/
+   ls components/application/table/
+   ls components/application/charts/
+   Если нет -> установи:
+   npx untitledui@latest add metrics table charts-base progress-indicators badges filter-bar pagination
+4. ТОЛЬКО ПОСЛЕ ЭТОГО: пиши код
+```
 
 ---
 
-## 3. Dashboard Patterns
+## Шаг 1: Структура любого дашборда
 
-### Pattern 1: KPI Row (PLAN + GAP)
 ```
-[Scorecard]     [Scorecard]     [Scorecard]     [Scorecard]     [Scorecard]
- Выручка         CR воронки      Лиды            Ср. чек         Retention
- План: 500K      План: 25%       План: 200       План: 10K       План: 40%
- Факт: 420K      Факт: 18%       Факт: 210       Факт: 9.3K      Факт: 38%
- ГЭП: -80K ❌    ГЭП: -7pp ❌    ГЭП: +10 ✅     ГЭП: -700 ⚠️    ГЭП: -2pp ⚠️
+[Заголовок страницы]                         <- h1 + subtitle
+[KPI Row: 4-5 MetricsSimple/MetricsChart03]  <- grid cols-4/cols-5
+[Charts: 1-2 TableCard.Root + Recharts]      <- grid cols-2
+[Table: TableCard.Root + Table]              <- full width
 ```
-- Result-метрики слева, driver-метрики справа
-- Каждая: план / факт / ГЭП (₽ или %) + цвет по отклонению
-- ГЭП result всегда в ₽, ГЭП driver в % или pp
 
-### Pattern 2: Table с mini-bars
-```
-Имя | Метрика 1 [====    ] | Метрика 2 [==      ] | Badge
-```
-- AG Grid: `cellRenderer` для mini-bar, `cellStyle` для цвет по норме
-- Сортировка: по умолчанию — по главной метрике desc
-- Строка = сущность (человек, продукт, канал)
-
-### Pattern 3: Funnel View
-```
-Шаг 1: 1000  [██████████████████████] 100%
-Шаг 2: 750   [█████████████████     ] 75%    ← CR: 75%
-Шаг 3: 300   [███████               ] 30%    ← CR: 40%
-```
-- Horizontal bars, убывающие
-- Показывай % конверсии между шагами
-- `<BarChart layout="vertical">` в Recharts
-
-### Pattern 4: Trend + Comparison (GAP: тренд)
-```
-[Line Chart: текущий период vs предыдущий]
-```
-- Два ряда: current (brand-solid) + previous (fg-disabled)
-- Легенда под графиком, не сбоку
-- Y-axis: не начинать с нуля если вариация мала
-- Аннотация: отметка момента изменения (если известна причина)
-
-### Pattern 5: Action Log (ACT + CHECK)
-```
-| Driver      | Действие              | Прогноз   | Факт      | Delta    |
-|-------------|----------------------|-----------|-----------|----------|
-| CR шаг 3    | Новый скрипт         | +5pp      | +3pp      | -2pp ⚠️  |
-| Ср. чек     | Допродажа в боте     | +1.5K     | +2.1K     | +0.6K ✅ |
-```
-- Таблица экспериментов: что делали → что ожидали → что получили
-- Накопительная база знаний: что работает в этом бизнесе
+Конкретный код структуры: `reference/dashboard-components.md` секция 7.
 
 ---
 
-## 4. Стек
+## Шаг 2: Выбор компонента
 
-### Таблицы → AG Grid Community
+| Что показать | UUI компонент | НЕ делать |
+|---|---|---|
+| KPI число + тренд | `MetricsSimple` | Ручная карточка `<div class="bg-white">` |
+| KPI + sparkline | `MetricsChart03` | Ручной `<svg>` |
+| KPI + иконка | `MetricsIcon03` | Ручная иконка + число |
+| Стрелка +/- % | `MetricChangeIndicator` | Ручной `<span class="text-green">` |
+| Таблица с заголовком | `TableCard.Root` + `Table` | Ручной `<table class="w-full">` |
+| Фильтры таблицы | `FilterBarTabsAndSearchDemo` | Ручные табы и инпуты |
+| Bar/Line chart | Recharts + `ChartTooltipContent` | Ручной `<svg viewBox>` |
+| Progress bar | `ProgressBar` (labelPosition="right") | Ручной `<div style="width:36%">` |
+| Статус badge | `Badge` / `BadgeWithDot` | Ручной `<span class="rounded-full">` |
+| Пагинация | `PaginationCardMinimal` | Ручная пагинация |
+
+**Если нужного компонента нет в таблице -> СТОП, спроси Алекса.**
+
+---
+
+## Шаг 3: CSS-классы
+
+**Семантические токены, НЕ Tailwind defaults:**
+
+| Роль | Правильно | ЗАПРЕЩЕНО |
+|---|---|---|
+| Текст | `text-primary`, `text-secondary`, `text-tertiary` | `text-gray-900`, `text-gray-500` |
+| Фон | `bg-primary`, `bg-secondary` | `bg-white`, `bg-gray-50` |
+| Бордер | `ring-1 ring-secondary ring-inset`, `border-secondary` | `ring-gray-200`, `border-gray-100` |
+| Тень | `shadow-xs` | `shadow-sm` |
+| KPI число | `text-display-sm font-semibold text-primary` | `text-3xl font-bold` |
+| Заголовок | `text-display-xs font-semibold text-primary` | `text-xl font-bold` |
+| Подпись | `text-sm font-medium text-tertiary` | `text-xs text-gray-500` |
+
+---
+
+## Шаг 4: Recharts правила
+
+- Recharts для ВСЕХ графиков (Line, Bar, Area, Pie)
+- `ChartTooltipContent` из `@/components/application/charts/charts-base` для tooltip
+- `ChartLegendContent` для легенды
+- `ChartActiveDot` для активной точки на линиях
+- CSS-классы для цветов: `className="fill-utility-brand-600"`, НЕ `fill="#3b82f6"`
+- `<ResponsiveContainer width="100%" height={240}>` - всегда
+- `<CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border-secondary" />`
+- `tickLine={false} axisLine={false}` на осях
+
+---
+
+## Шаг 5: Status colors (план/факт)
+
 ```tsx
-import { AgGridReact } from 'ag-grid-react';
-```
-- Используй когда: >15 строк, нужна сортировка/фильтрация, cell renderers
-- Cell renderer для mini-bar: `reference/chart-patterns.md#mini-bar`
-- CellStyle для conditional color: `reference/chart-patterns.md#cell-color`
+// Цвет по отклонению от плана
+const getStatusColor = (percent: number) => {
+  if (percent >= 90) return "success";   // >= 90% плана = зеленый
+  if (percent >= 70) return "warning";   // 70-90% = желтый
+  return "error";                        // < 70% = красный
+};
 
-### Графики → Recharts
-```tsx
-import { LineChart, BarChart, ... } from 'recharts';
-```
-- Используй когда: воронка, тренды, сравнения
-- Цвета: ТОЛЬКО токены через CSS variables — `reference/chart-patterns.md#colors`
-- Tooltip: кастомный `<CustomTooltip>` — `reference/chart-patterns.md#tooltip`
+// Для ProgressBar
+<ProgressBar
+  value={percent}
+  labelPosition="right"
+  progressClassName={
+    percent >= 90 ? "bg-fg-success-primary"
+    : percent >= 70 ? "bg-fg-warning-primary"
+    : "bg-fg-error-primary"
+  }
+/>
 
-### UI Shell → Untitled UI
-- Tabs: переключение между видами (воронка / тренды / рейтинг)
-- DateRangePicker: фильтр периода (если есть в проекте — иначе нативный input)
-- Badge: статус, норма, план/факт
-- Skeleton: состояние загрузки
+// Для Badge
+<Badge color={getStatusColor(percent)} size="sm">
+  {percent}%
+</Badge>
+
+// Для MetricChangeIndicator
+<MetricChangeIndicator
+  type="simple"
+  trend={percent >= 100 ? "positive" : "negative"}
+  value={`${percent}%`}
+/>
+```
+
+Без плана = нейтральный цвет (без status colors).
 
 ---
 
-## 5. UX Принципы восприятия данных (для дашбордов)
+## Шаг 5.5: Источник истины для метрик продаж — `gc_payment_events`
 
-**V1 — Якорные метрики**: Result-метрики (1-3) — самые крупные, всегда видны без скролла. С планом и ГЭПом.
+**КРИТИЧЕСКОЕ ПРАВИЛО** для всех дашбордов operations/sales/launches:
 
-**V2 — Группировка**: max 3-4 смысловых группы (Result → Drivers → Trends → Actions). Больше — когнитивная перегрузка.
+- **Cashflow-метрики** (выручка, оплачено за день, средний чек) — ВСЕГДА из `gc_payment_events WHERE payment_status='success'`, НЕ из `gc_orders.paid_amount`.
+- **Причина:** `gc_orders.paid_at`, `gc_orders.raw_data->>'Оплачен'`, `gc_orders.status='Завершен'` — всё это top-level snapshot, который отстаёт от реальных платежей на 1-3 дня (пока банк закроет рассрочку). В живой сверке 10.04.2026 было: 2 заказа "Завершён" vs 4 реальных успешных платежа — разница критическая.
+- **Один заказ = несколько events** (каждый транш рассрочки — отдельный event). `COUNT(DISTINCT gc_order_id)` даёт "сколько заказов получили платёж".
 
-**V6 — Люди = строки**: таблица людей/сущностей — каждая строка = одна сущность. Не агрегируй в ячейки.
+**Пример корректного aggregate_day:**
+```sql
+-- Сколько заказов получили оплату за 10.04
+SELECT
+  COUNT(DISTINCT gc_order_id)    AS paid_orders,
+  SUM(gross_amount)              AS revenue_gross,     -- оплачено клиентами
+  SUM(received_amount)           AS revenue_net,       -- пришло на счёт (gross - комиссии ПС)
+  SUM(commission_amount)         AS commission_total
+FROM gc_payment_events
+WHERE payment_date::date = '2026-04-10'
+  AND payment_status = 'success';
+```
 
-**V7 — Бар + число**: всегда показывай и бар, и числовое значение. Бар — для сравнения, число — для точности.
+**Разрез по типу заказа (hot/manual/diagnostic):**
+```sql
+SELECT go.order_type,
+       COUNT(DISTINCT pe.gc_order_id) AS cnt,
+       SUM(pe.received_amount) AS amount
+FROM gc_payment_events pe
+JOIN gc_orders go ON go.id = pe.gc_order_id
+WHERE pe.payment_date::date = :d AND pe.payment_status = 'success'
+GROUP BY go.order_type;
+```
 
-**V10 — Цвет = контекст**: зелёный/красный только если есть план/норма. Без плана — нейтральный. ГЭП > 10% = красный, 5-10% = жёлтый, < 5% = зелёный.
+### Когортный CR (две метрики рядом)
 
-**V12 — Progressive Disclosure**: Result всегда виден → Drivers при скролле → Health за tabs/drill-down.
+Для любого CR "заказ→оплата" показывать **обе** метрики:
 
-**V13 — Тренд > точка**: любая метрика показывается как динамика (4-8 точек), а не одно число. Одно число — скрывает направление движения.
+**1. CR штучный когортный** — доля заказов когорты у которых есть успешный платёж:
+```sql
+WITH cohort AS (SELECT id FROM gc_orders WHERE created_at::date = :d),
+cohort_paid AS (
+  SELECT DISTINCT c.id FROM cohort c
+  JOIN gc_payment_events pe ON pe.gc_order_id = c.id
+  WHERE pe.payment_date::date = :d AND pe.payment_status = 'success'
+)
+SELECT
+  COUNT(DISTINCT cp.id)::float / NULLIF((SELECT COUNT(*) FROM cohort), 0) AS c2b_orders_cohort
+FROM cohort_paid cp;
+```
 
-**V14 — Рубли > проценты**: ГЭП по result всегда в ₽. Проценты — для drivers. Руководитель думает деньгами, а не процентами.
+**2. CR денежный когортный** — доля потенциальной выручки когорты что уже на счету:
+```sql
+SELECT
+  SUM(pe.received_amount) FILTER (WHERE pe.payment_status='success' AND pe.payment_date::date = :d)
+  / NULLIF(SUM(c.amount), 0) AS c2b_money_cohort
+FROM gc_orders c
+LEFT JOIN gc_payment_events pe ON pe.gc_order_id = c.id
+WHERE c.created_at::date = :d;
+```
+
+В UI обе метрики рядом с пояснениями в tooltip. Штучный — основная (стабильнее между днями), денежный — дополнительная (отражает рассрочки как частичное закрытие). НЕ смешивать в одну цифру.
+
+### Flow vs Cohort — не путать
+
+- **Flow CR** (`paid_today / orders_today`) — может давать >100% и смешивает когорты разных дней. НЕ использовать.
+- **Cohort CR** (`(paid from cohort X) / (orders in cohort X)`) — корректно. Всегда используем его.
 
 ---
 
-## 6. IF/THEN
+## Шаг 6: PGAC привязка к компонентам
 
-```
-IF dashboard/chart/table/KPI → READ veda-ui-system/SKILL.md FIRST
-IF scorecard → reference/usage-patterns.md#2 (KPI-карточка)
-IF table > 15 строк → AG Grid (НЕ UUI Table)
-IF custom component → СТОП, проверь UUI MCP search_components
-
-IF таблица > 15 строк → AG Grid (не HTML table, не Untitled UI Table)
-IF таблица < 15 строк → Untitled UI Table компонент
-IF воронка → horizontal bar, убывающий, с % между шагами
-IF тренд → line chart, два ряда (current + prev), мин. 4 точки
-IF KPI одного значения → Scorecard (план / факт / ГЭП + тренд-спарклайн)
-IF нет данных → Empty State (Untitled UI empty-state компонент)
-IF загрузка → Skeleton (не спиннер для таблиц)
-IF есть план → цвет по ГЭПу (>10% красный, 5-10% жёлтый, <5% зелёный)
-IF нет плана → нейтральный цвет, не красить ничего
-IF result просел → подсвети просевший driver в декомпозиции
-IF действие выполнено → покажи прогноз vs факт (Pattern 5)
-```
+| Фаза | Что показать | Компонент |
+|---|---|---|
+| PLAN | План / факт / ГЭП | `MetricsSimple` (KPI row) |
+| GAP: driver | Какой driver просел | `TableCard` + `Table` с `ProgressBar` в ячейке |
+| GAP: тренд | 4-8 недель | `MetricsChart03` (sparkline) или Recharts `LineChart` |
+| GAP: цена | Потери в R | `Badge color="error"` с суммой |
+| ACT | Задачи | `TableCard` + `Table` |
+| CHECK | Прогноз vs факт | Recharts `BarChart` (grouped) |
 
 ---
 
-## 7. Spec Checklist (перед реализацией)
-
-### Методология
-- [ ] Определены result-метрики (1-3, с планами в ₽)
-- [ ] Result декомпозирован на drivers (формула: result = driver1 × driver2 × ...)
-- [ ] Для каждого driver есть план (числовой target)
-- [ ] Определены health-метрики (что смотреть при просадке driver)
-- [ ] Определён цикл: частота замера, длина спринта
-
-### Визуализация
-- [ ] Выбран правильный chart type по таблице (секция 4)
-- [ ] ГЭП result в ₽, ГЭП drivers в % / pp
-- [ ] Тренды — минимум 4 точки, не одно число
-- [ ] Progressive disclosure: result → drivers → health
-
-### Техника
-- [ ] API эндпоинты существуют или спроектированы
-- [ ] Определён формат ответа (grouped_by, period, granularity)
-- [ ] Состояния: loading (skeleton), empty, error
-- [ ] Фильтры: period, группировка — зафиксированы в спеке
-
----
-
-## 8. Dashboard Design Methodology
-
-### 8a. Information Architecture Rules
-
-- Max 3-4 смысловых группы на экран (V2) — больше = когнитивная перегрузка
-- Max 5-6 колонок в таблице управленческого уровня
-- Max 4-5 data points на ячейку таблицы
-- Progressive Disclosure: Result (above fold) → Drivers (scroll/tab) → Health (drill-down/collapsible)
-- Scorecard row всегда visible без скролла
-
-### 8b. Management Dashboard Anti-patterns
-
-| Антипаттерн | Почему плохо | Как исправить |
-|-------------|-------------|---------------|
-| Стены чисел без mini-bars | Невозможно сравнить по строкам | Добавить AG Grid mini-bar cellRenderer |
-| Бейджи-шум (>2 бейджа на строку) | Внимание рассеивается, всё кажется важным | Max 1-2 badge на строку, только критичные |
-| Числа без контекста (без плана/нормы/тренда) | Непонятно хорошо или плохо | Всегда: план + ГЭП + тренд |
-| Технические метрики на управленческом экране | Руководитель не знает что делать с "покрытием 87%" | Health-слой (drill-down), не в main view |
-| Цвет без привязки к плану (красный при plan=0) | Ложная тревога, потеря доверия | IF нет плана → нейтральный цвет |
-| Точка вместо тренда (одно число без динамики) | Скрывает направление движения | Минимум 4 точки, sparkline или line chart |
-| Горизонтальный скролл в таблице (>8 колонок) | Управленец не скроллит вправо | Сокращай до 5-6 колонок, drill-down для остального |
-| Кастомные карточки вместо UUI компонентов | Визуальный разнобой, нет дизайн-системы | Использовать UUI MetricsSimple, TableCard и др. |
-
-### 8c. SPEC → Visualization Bridge
+## Шаг 7: Dashboard Review Checklist
 
 ```
-IF спека "план/факт" → Scorecard (план/факт/ГЭП/progress bar)
-IF спека "реестр" → Table (UUI <15 строк, AG Grid >15)
-IF спека "по менеджерам" → Table с mini-bars и conditional color
-IF спека "CR" → Scorecard + trend line (не одно число)
-IF спека "контроль/синхронизация" → Health-слой (collapsible/drill-down)
-IF спека "риски" → перевести в ₽ потерь, не count проблем
-IF спека "динамика/тренд" → LineChart мин. 4 точки
-IF спека "воронка" → BarChart horizontal, убывающий
-IF спека "рейтинг" → BarChart sorted desc + Table с mini-bars
+КОМПОНЕНТЫ (блокер - ручная верстка = переделка)
+[ ] Все KPI через MetricsSimple/MetricsIcon/MetricsChart?
+[ ] Все таблицы через TableCard.Root + Table?
+[ ] Все графики через Recharts + ChartTooltipContent?
+[ ] Все progress bars через ProgressBar?
+[ ] Все badges через Badge/BadgeWithDot?
+[ ] Нет ручных <div class="bg-white rounded-xl">?
+[ ] Нет ручных <svg viewBox>?
+[ ] Нет ручных <table class="w-full">?
+
+CSS (блокер - gray-* = переделка)
+[ ] Все цвета семантические (text-primary, НЕ text-gray-900)?
+[ ] shadow-xs, НЕ shadow-sm?
+[ ] bg-primary, НЕ bg-white?
+[ ] tabular-nums на всех числах?
+
+ДАННЫЕ
+[ ] KPI row visible без скролла?
+[ ] Есть план + ГЭП где определен план?
+[ ] Нет плана = нейтральный цвет?
+[ ] Тренды мин. 4 точки?
+[ ] ГЭП result в R, ГЭП driver в % / pp?
+
+STRUCTURE
+[ ] Max 4-5 KPI в ряду?
+[ ] Max 3-4 смысловых группы на экране?
+[ ] Progressive Disclosure: Result - Drivers - Health?
 ```
-
-### 8d. Dashboard Review Checklist
-
-```
-[ ] PGAC: есть план, ГЭП в ₽, виновный driver?
-[ ] V13: все метрики с трендом (мин. 4 точки)?
-[ ] V12: Progressive Disclosure (Result → Driver → Health)?
-[ ] V14: ГЭП result в ₽, не в %?
-[ ] V10: цвет привязан к плану/норме? Без плана = нейтральный?
-[ ] V7: таблицы имеют mini-bars?
-[ ] V2: max 3-4 группы на экране?
-[ ] Charts: правильный тип по таблице (секция 2)?
-[ ] UUI: все компоненты из дизайн-системы, нет кастомных?
-[ ] Anti-patterns: нет стен чисел, бейджей-шума, технического шума?
-```
-
-### 8e. Reference Dashboards
-
-**Stripe Dashboard**: Scorecard row (план/факт/тренд) → Line chart (тренд выручки) → Table (транзакции). Всё Result и Drivers, никаких технических метрик на главном экране.
-
-**Linear Analytics**: Progressive disclosure — summary row сверху, detail chart в центре, breakdown table снизу. Drill-down скрыт за кликом.
-
-**3-блочная структура (каноническая)**:
-```
-[KPI row: 4-5 Scorecard с планом/ГЭПом]
-[Chart: Line/Bar тренд главного result]
-[Table: разбивка по сущностям с mini-bars]
-```
-Этот паттерн покрывает 80% управленческих дашбордов.
 
 ---
 
 ## References
 
-- `docs/profit-formula-methodology.md` — каноническая методология Формулы Прибыли VEDA
-- `reference/chart-patterns.md` — Recharts + AG Grid code recipes
-- `reference/api-analytics.md` — существующие аналитические эндпоинты veda-api
+| Файл | Что | Когда читать |
+|------|-----|-------------|
+| `reference/dashboard-templates.md` | **ГОТОВЫЕ ШАБЛОНЫ**: 3 template'а (CEO, РОП, Funnel) с полным кодом. Читать ПЕРВЫМ | Всегда при создании дашборда |
+| `reference/dashboard-components.md` | **Компоненты**: copy-paste код MetricsSimple, TableCard, Recharts, ProgressBar, Badge | Если нужен элемент не из шаблона |
+| `reference/dashboard-architecture.md` | **Принципы**: иерархия, логика данных, план/факт, run rate, воронки. 62 правила | Обоснование решений, ревью |
+| `platform/docs/profit-formula-methodology.md` | **Формула прибыли**: полная декомпозиция, 4 источника, 3 типа заказов, бенчмарки | Проектирование metrics structure |
+| `reference/chart-patterns.md` | Recharts рецепты | Работа с графиками |
+| `reference/api-analytics.md` | API endpoints | Подключение данных |
+| `ceo-consulting/SKILL.md` | Управленческая методология PGAC | Выбор метрик и структуры |

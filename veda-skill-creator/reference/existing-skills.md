@@ -1,36 +1,97 @@
 # Реестр навыков Veda
 
-Последнее обновление: 2026-02-18
+Последнее обновление: 2026-03-18
 
-## Фаза 1 -- Технические (готовы)
+## Быстрый поиск по задаче
 
-| Навык | Описание | Файлы |
-|-------|----------|-------|
-| `veda-deploy` | Деплой проектов Veda на сервер. rsync, PM2, env-переменные, build | SKILL.md, reference/incidents.md, reference/server-env.md |
-| `veda-backend-patterns` | Паттерны и ловушки FastAPI бэкенда. Enum gotchas, роуты, BFF | SKILL.md |
-| `vedic-astro-knowledge` | Полная цепочка астро-данных: API, трактовки, LLM, резолверы | SKILL.md |
-| `veda-skill-creator` | Мета-навык создания новых навыков. Шаблон, чеклист, протокол | SKILL.md, reference/existing-skills.md |
-| `diagnostic-workstation` | Сократический подход к ведической диагностике. 3 волны, 9 срезов | SKILL.md |
+| Задача | Команда |
+|--------|---------|
+| Уточнить требования перед кодом | `/brainstorm` |
+| Исполнить спеку по фазам | `/spec` |
+| Найти баг, системная диагностика | `/debug` |
+| Стратегический анализ (мульти-агент) | `/council` |
+| Создать новый скилл | `/skill-new` |
+| Промпт-инжиниринг, структура, XML | `/prompt` |
+| Деплой на прод | `/deploy` |
+| FastAPI, SQLAlchemy, Alembic | `/backend` |
+| Next.js, BFF, auth, WebSocket | `/frontend` |
+| Design tokens, компоненты, лейауты | `/ui` |
+| Схема БД, таблицы, enum'ы | `/db` |
+| Тесты (pytest, Vitest, Playwright) | `/test` |
+| Аудит скорости, бандлы | `/perf` |
+| Telegram разметка (HTML/MD) | `/tg-format` |
+| Дашборды, KPI, воронки | `/analytics` |
+| Курс VEDA: тарифы, модули, 7Н/5S | `/offer` |
+| Проектирование обучения + удержание | `/edu` |
+| UX-дизайн: Gestalt, когнитивная психология | `/ux` |
+| Аудитория, боли, сегменты | `/buyer` |
+| Найм, рекрутинг, адаптация, KPI new hires | `/hr` |
+| AstroGuru API, трактовки, Redis | `/astro` |
+| БПХШ: верификация астрорасчётов | `/bphs` |
+| Генерация астро-контента | `/astro-content` |
+| Диагностическая сессия 1-на-1 | `/diagnostic` |
+| Вебинар: структура + продакшн | `/webinar` |
+| CJM, бот-воронки, механики | `/cjm` |
+| Архивация, валидация MEMORY | `/cleanup` |
+| Статус инфраструктуры | `/status` |
 
-## Фаза 2 -- Контент и маркетинг (план)
+## Полный каталог (25 скиллов, 31 команда)
 
-| Навык | Описание | Источник |
-|-------|----------|---------|
-| `prompt-engineering` | 28 техник создания промптов для LLM | Playbook_Prompt_LLM.md |
-| `webinar-architect` | Архитектура вебинаров по методу Hormozi | Playbook_Hormozi.md |
-| `buyer-persona` | Баейр-персона, сегменты, барьеры, мотивации | Playbook_Buyer.md |
-| `astro-content` | Ведическая астрология для контента | Playbook_Astro.md |
-| `webinar-production` | Продакшен слайдов, голос спикера, кейсы | Playbook_Slides/Speaker/Cases/Interactive/Proofs.md |
+### Process — как работать
 
-## Фаза 3 -- Технические (план)
+| Команда | Скилл | Описание | Файлы |
+|---------|-------|----------|-------|
+| `/brainstorm` | veda-brainstorm | Design-first: уточнение требований, исследование перед кодом, генерация идей | SKILL.md |
+| `/spec` | veda-spec-execution | Исполнение спеки: фазы, чеклисты, handoff между фазами | SKILL.md |
+| `/debug` | veda-debugging | Systematic debugging: 4 фазы (symptoms→hypothesis→verify→fix), root cause first | SKILL.md |
+| `/council` | ceo-council | Мульти-агентный стратегический анализ: 3-5 Opus-агентов с разными ролями | SKILL.md |
+| `/skill-new` | veda-skill-creator | Мета-навык: шаблон SKILL.md, чеклист качества, протокол "сохрани как скилл" | SKILL.md, reference/existing-skills.md |
+| `/prompt` | prompt-engineering | 28 техник промпт-инжиниринга: XML-теги, псевдокод, self-check, Few-Shot | SKILL.md |
 
-| Навык | Описание | Источник |
-|-------|----------|---------|
-| `veda-frontend-patterns` | Паттерны Next.js 14 фронтенда Veda | veda-presentation/CLAUDE.md |
-| `ai-integrations` | 7 точек AI-интеграций: LLM, STT, анализ | MEMORY.md, openrouter.ts |
-| `bot-ops` | Управление Telegram-ботами: PM2, агенты, A/B | Tanya_bot + veda-bot-v2 CLAUDE.md |
-| `presentation-system` | Система презентаций: 16 визуалов, шаблоны, редактор | veda-presentation/CLAUDE.md |
+### Platform — чем строить
 
-## Спека
+| Команда | Скилл | Описание | Файлы |
+|---------|-------|----------|-------|
+| `/deploy` | veda-deploy | PM2, nginx, rsync, env-переменные, build | SKILL.md, reference/ |
+| `/backend` | veda-backend-patterns | FastAPI паттерны: enum .value gotcha, роутеры, BFF, SQLAlchemy | SKILL.md |
+| `/frontend` | veda-frontend-patterns | Next.js 14: BFF no-store, auth JWT, WebSocket, static routes first | SKILL.md |
+| `/ui` | veda-ui-system | Untitled UI Pro: CLI, компоненты, токены, лейауты | SKILL.md, reference/ |
+| `/db` | veda-database-schema | 48 таблиц veda_crm: схема, связи, enum'ы, миграции Alembic | SKILL.md, reference/ |
+| `/test` | veda-testing | pytest + Vitest + Playwright | SKILL.md |
+| `/perf` | veda-performance | Аудит скорости: code splitting, lazy loading, мемоизация | SKILL.md, reference/ |
+| `/tg-format` | telegram-formatting | Telegram Bot API: HTML vs Markdown, экранирование, лимиты | SKILL.md |
+| `/analytics` | veda-data-analytics | Дашборды, KPI, воронки, таблицы (AG Grid + Recharts) | SKILL.md |
 
-Полная спецификация всех навыков: `/Users/alexlee/Projects/Claude_Docs/SPEC_SKILLS_SYSTEM.md`
+### Domain — Продукт и обучение (4 скилла)
+
+| Команда | Скилл | Описание | Файлы |
+|---------|-------|----------|-------|
+| `/offer` | *(ref в webinar-production)* | Курс VEDA 7Н/5S: тарифы, модули, НейроАстролог, Astroguru, value stack | reference/product.md |
+| `/edu` | edu | Проектирование обучения + удержание: андрагогика, геймификация, churn, peer-learning, 4 слоя retention | SKILL.md, reference/ (8 файлов) |
+| `/ux` | veda-product-design | UX-принципы: Gestalt, когнитивная психология, композиция, emotional design, value map | SKILL.md, reference/ |
+| `/buyer` | buyer-persona | Аудитория: сегменты, боли, барьеры, мотивации, JTBD | SKILL.md |
+| `/hr` | hr | Найм, рекрутинг, structured interviews, тестовые, onboarding, вывод на KPI | SKILL.md, reference/ |
+
+### Domain — Астро
+
+| Команда | Скилл | Описание | Файлы |
+|---------|-------|----------|-------|
+| `/astro` | vedic-astro-knowledge | AstroGuru API, трактовки планет/домов, Redis кеш, LLM-резолверы | SKILL.md |
+| `/bphs` | bphs-playbook | БПХШ: 8 модулей, 7500+ строк, верификация всех астрорасчётов | SKILL.md |
+| `/astro-content` | astro-content | Генерация астро-контента: прогнозы, транзиты, совместимость | SKILL.md |
+| `/diagnostic` | diagnostic-workstation | Диагностическая сессия: сократический подход, 3 волны, 9 срезов карты | SKILL.md |
+
+### Domain — Воронки и контент
+
+| Команда | Скилл | Описание | Файлы |
+|---------|-------|----------|-------|
+| `/cjm` | cjm-bot-mechanics | CJM бот-воронок: AARRR, Hook Loop, 26 механик, 5 шаблонов воронок | SKILL.md, reference/ |
+| `/webinar` | webinar-architect + webinar-production | Вебинары: структура (Hormozi) + продакшн (голос, кейсы, визуалы) | 2× SKILL.md, reference/ |
+
+### Утилиты (без скилла)
+
+| Команда | Описание |
+|---------|----------|
+| `/cleanup` | Архивация SPECs, валидация MEMORY.md |
+| `/status` | Текущий статус серверов и сервисов |
+| `/handoff` | Алиас для `/spec` |

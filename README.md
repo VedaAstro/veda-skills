@@ -1,42 +1,57 @@
-# Veda Skills for Claude Code
+# Veda Skills (canonical source)
 
-Набор навыков (Skills) для Claude Code, содержащих проектные знания платформы Veda.
+Канонический каталог навыков VEDA для **Claude Code** и **Codex**: репозиторий на диске, без Google Drive как SSOT.
 
-## Как работает
+## Где лежит код
 
-Навыки лежат в папке **Claude Skills** на Google Drive. `~/.claude/skills` указывает на эту папку через симлинк. Google Drive синхронизирует -- навыки всегда актуальны.
+| Путь | Назначение |
+|------|------------|
+| **`/Users/alex/Projects/shared/veda-skills/`** | Исходники SKILL.md (эта папка) |
+| `~/.codex/skills` | Рекомендуется symlink → `shared/veda-skills` (см. `AGENTS.md` → CODEX BOOTSTRAP) |
+| `~/.claude/skills` | Можно symlink на тот же каталог или дублировать выборочно |
 
-### Для члена команды (первая настройка)
+Обновление навыков: `git pull` в корне `Projects` (или в submodule, если подключите отдельный репозиторий).
 
-1. Убедись что у тебя есть доступ к папке `Claude Skills` на Google Drive
-2. Установи Google Drive for Desktop (если ещё нет)
-3. Запусти в терминале:
+## Политика секретов
 
-```bash
-git clone https://github.com/VedaAstro/veda-skills.git ~/veda-skills
-~/veda-skills/setup.sh
-```
+В skills **не** кладём пароли, токены, приватные ключи. Операционные секреты — только вне git (`~/.claude/.../memory/`, `.env`, менеджеры секретов).
 
-Всё. Навыки обновляются через Google Drive автоматически.
+## Список навыков (кратко)
 
-## Навыки
+### Платформа / инженерия
 
-### Технические
+| Навык | Назначение |
+|-------|------------|
+| `veda-deploy` | Деплой: rsync, PM2, env, build |
+| `veda-backend-patterns` | FastAPI, Enum, роуты, BFF |
+| `veda-frontend-patterns` | Next.js, BFF, auth |
+| `veda-debugging` | Отладка по фазам |
+| `veda-testing` | pytest / Vitest / Playwright |
+| `veda-spec-execution` | Жизненный цикл SPEC |
+| `veda-database-schema` | Схема veda_crm |
+| `veda-ui-system` | Untitled UI, токены |
 
-| Навык | Описание |
-|-------|----------|
-| `veda-deploy` | Деплой на сервер: rsync, PM2, env-переменные, build |
-| `veda-backend-patterns` | Паттерны FastAPI: Enum gotchas, роуты, BFF |
-| `vedic-astro-knowledge` | Цепочка астро-данных: API, трактовки, LLM, резолверы |
-| `veda-skill-creator` | Мета-навык: как создавать новые навыки |
-| `diagnostic-workstation` | Сократическая диагностика: 3 волны, 9 срезов |
+### Личное
 
-### Контент и маркетинг
+| Навык | Назначение |
+|-------|------------|
+| `movie-picks` | Фильмы и сериалы для Алекса: solo и с женой. Вкусовой профиль + алгоритм + база просмотренного |
 
-| Навык | Описание |
-|-------|----------|
-| `prompt-engineering` | 28 техник создания промптов для LLM |
-| `webinar-architect` | Проектирование вебинаров: Hormozi, слайды, скрипты |
-| `buyer-persona` | Сегменты аудитории, барьеры, decision trees |
-| `astro-content` | Справочник астрологии для контента |
-| `webinar-production` | Голос спикера, продукт, кейсы, пруфы |
+### Продукт / контент / орг
+
+| Навык | Назначение |
+|-------|------------|
+| `veda-brainstorm` | Дизайн до кода |
+| **`webinar`** | **Вебинары Ирины Чайки — ядро (метаправило, нарративы, голос, миссия), подпапки buyer/ (сегменты, барьеры), types/ (прогрев/оффер/дожим), library/ (кейсы, пруфы, продукт, визуалы, астро)** |
+| `landing-architect` | Лендинги: регистрация + оффер |
+
+**⚠️ Устарело (в `_archive/`):** `webinar-architect-v1`, `webinar-production-v1`, `buyer-persona-v1` — заменены единым скиллом `webinar/`. Старые не читать.
+| `astro-content` | Астро-контент |
+| `ceo-consulting` | PGAC, метрики (часто в глобальном `~/.claude/skills`) |
+
+Полный список — в каталогах рядом с этим README (`*/SKILL.md`).
+
+## Поведение агента (SSOT)
+
+Правила поведения, архитектура, деплой, интеграции — в **`/Users/alex/Projects/AGENTS.md`**.  
+Claude в этом workspace: **`.claude/CLAUDE.md`** — тонкий указатель на `AGENTS.md`, без дублирования длинных политик.

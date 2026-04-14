@@ -7,46 +7,82 @@ description: Паттерны и ловушки FastAPI бэкенда Veda. Enu
 
 ## Когда использовать
 
-- Создание нового эндпоинта (backend или BFF)
-- Работа с моделями и Enum'ами
-- Alembic миграции
-- Отладка багов в бэкенде
+- Создание/отладка эндпоинтов (backend или BFF)
+- Работа с моделями, Enum'ами, миграциями
 - Создание нового роутера
 
-## Топ-3 ловушки (КРИТИЧНО)
+## SSOT -- архитектурные законы
+
+### 1. Enum для каждого конечного множества
+
+Голые строки расползаются по файлам и ломаются без валидации.
+
+```python
+class BookingStatus(str, Enum):  # enums.py -- единственный источник правды
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    NO_SHOW = "no_show"
+
+if booking.status == BookingStatus.COMPLETED.value: ...
+```
+
+Новое поле с конечными значениями = сначала Enum в enums.py, потом использование.
+
+### 2. Service Layer для shared логики
+
+Дублированная логика в разных endpoints дрейфует. Общий service в `api/services/<domain>.py`:
+
+```python
+class DiagnosticViewService:
+    @staticmethod
+    def enrich(booking, ...) -> dict:
+        """Единственное место обогащения booking для API."""
+        ...
+# Все endpoints: enriched = DiagnosticViewService.enrich(booking, ...)
+```
+
+Перед inline-логикой в handler -- проверь `api/services/`. Логика в >1 месте = service.
+
+### 3. Один формат ответа для одной сущности
+
+Одна сущность из разных endpoints = одинаковый формат через общий serializer в service.
+
+### Чеклист нового endpoint
+
+1. Enum для конечных значений? Создать в enums.py
+2. Service для домена? Использовать / создать если >1 endpoint
+3. Serializer? Один to_dict через service
+4. Hardcoded строки? Заменить на Enum.value
+
+---
+
+## Топ-3 ловушки
 
 ### 1. Enum `.value` в SQLAlchemy
 
-```python
-# НЕПРАВИЛЬНО -- сравнение с объектом Enum, не найдёт ничего
-query = select(Deal).where(Deal.status == DealStatus.PAYMENT)
+SQLAlchemy сравнивает column с Python-объектом, а column хранит строку -- 0 результатов без ошибки.
 
-# ПРАВИЛЬНО -- сравнение со строковым значением
-query = select(Deal).where(Deal.status == DealStatus.PAYMENT.value)
+```python
+query = select(Deal).where(Deal.status == DealStatus.PAYMENT.value)  # всегда .value
 ```
 
-**Правило:** В SQLAlchemy WHERE-условиях ВСЕГДА `.value`
+### 2. Статические роуты ПЕРЕД динамическими
 
-### 2. Порядок роутов: статические ПЕРЕД динамическими
+FastAPI проверяет по порядку -- `/{user_id}` поглотит `/diagnosticians`.
 
 ```python
-# ПРАВИЛЬНО
 router.get("/diagnosticians")   # статический -- первый
 router.get("/{user_id}")        # динамический -- второй
-
-# НЕПРАВИЛЬНО -- /diagnosticians никогда не сработает
-router.get("/{user_id}")
-router.get("/diagnosticians")
 ```
 
-### 3. StaffRole.DIAGNOSTIC_MANAGER.value
+### 3. StaffRole.DIAGNOSTIC_MANAGER.value == "diagnostician"
 
-```python
-# Значение enum'а -- "diagnostician", НЕ "diagnostic_manager"!
-StaffRole.DIAGNOSTIC_MANAGER.value == "diagnostician"  # True
-```
+Имя enum'а обманчиво -- значение `"diagnostician"`, проверяй в cheatsheet ниже.
 
-## Все Enum'ы (cheatsheet)
+## Enum cheatsheet
 
 | Enum | Значения |
 |------|----------|
@@ -60,7 +96,7 @@ StaffRole.DIAGNOSTIC_MANAGER.value == "diagnostician"  # True
 | `GoalType` | conversion, revenue, session_count, average_check |
 | `GoalPeriod` | daily, weekly, monthly, quarterly |
 
-## Шаблон нового роутера (Backend)
+## Шаблон роутера (Backend)
 
 ```python
 from fastapi import APIRouter, Depends, HTTPException
@@ -81,11 +117,8 @@ async def list_entities(
     return result.scalars().all()
 
 @router.get("/{entity_id}")
-async def get_entity(
-    entity_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: StaffUser = Depends(get_current_user)
-):
+async def get_entity(entity_id: int, db: AsyncSession = Depends(get_db),
+                     current_user: StaffUser = Depends(get_current_user)):
     result = await db.execute(select(YourModel).where(YourModel.id == entity_id))
     entity = result.scalar_one_or_none()
     if not entity:
@@ -93,60 +126,122 @@ async def get_entity(
     return entity
 ```
 
-## Шаблон BFF-роута (Next.js → FastAPI)
+## Шаблон BFF-роута (Next.js -> FastAPI)
 
 ```typescript
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, getAuthHeaders, unauthorizedResponse } from '@/app/lib/auth';
-
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser(request);
   if (!user) return unauthorizedResponse();
-
   const res = await fetch(`${BACKEND_URL}/api/your-endpoint`, {
     headers: getAuthHeaders(request),
-    cache: 'no-store',  // ОБЯЗАТЕЛЬНО для CRM-данных
+    cache: 'no-store',  // обязательно -- stale cache = неверные CRM-данные
   });
   return NextResponse.json(await res.json(), { status: res.status });
 }
 ```
 
-## Sales Session End Logic
+## Sales Session End (`POST /sales/sessions/{id}/end`)
 
-При завершении сессии (`POST /sales/sessions/{id}/end`):
-
-| outcome | Что создаётся | Детали |
-|---------|---------------|--------|
+| outcome | Создаётся | Детали |
+|---------|-----------|--------|
 | `sale` | Deal | status=payment |
-| `thinking` | Task | type=followup, due через 2 дня |
-| `callback` | Task | type=call, due через 1 день |
+| `thinking` | Task | type=followup, due +2 дня |
+| `callback` | Task | type=call, due +1 день |
 | `rejected` | -- | Обновляет client status, логирует interaction |
 
 ## Модели-синонимы
 
-| В коде | Что это по-человечески |
-|--------|----------------------|
-| `DiagnosticProfile` | Клиент (Client) |
-| `DiagnosticBooking` | Запись (Appointment) |
-| `DiagnosticSlot` | Слот расписания |
+`DiagnosticProfile` = Клиент, `DiagnosticBooking` = Запись, `DiagnosticSlot` = Слот расписания.
 
 ## OKK Snapshot-паттерн
 
-При сохранении OKK-результата, полная конфигурация шаблона замораживается в поле `template_snapshot`. Это гарантирует историческую целостность -- даже если шаблон позже изменится, оценка привязана к той версии, по которой проводилась.
+При сохранении OKK конфигурация шаблона замораживается в `template_snapshot` -- шаблон может измениться, а оценка привязана к версии на момент проведения.
+
+## Performance
+
+### Запросы к БД
+
+```python
+# select только нужные поля -- полный select тянет blob'ы и раздувает память
+query = select(Message.id, Message.text, Message.ts).where(
+    Message.room_id == room_id
+).order_by(Message.ts.desc()).limit(50)
+```
+
+- **Пагинация всегда** -- без неё один запрос может вернуть 100K строк
+- **`selectinload()`/`joinedload()`** для связей -- N+1 = N лишних запросов
+- **Индексы** на поля в WHERE + ORDER BY; `EXPLAIN ANALYZE` для запросов >10/мин
+
+```sql
+CREATE INDEX idx_messages_room_ts ON messages(room_id, ts DESC);
+CREATE INDEX idx_clients_status ON clients(status) WHERE deleted_at IS NULL;
+```
+
+### Кеширование (Redis cache-aside)
+
+```python
+cached = await redis.get(f"rooms:{user_id}")  # TTL 60s списки, 300s справочники
+if cached: return json.loads(cached)
+data = await fetch_from_db()
+await redis.setex(f"rooms:{user_id}", 60, json.dumps(data, default=str))
+```
+
+### Response Time бюджеты
+
+| Эндпоинт | Бюджет | При превышении |
+|----------|--------|----------------|
+| GET список | <200ms | Пагинация, select полей, индекс |
+| GET объект | <50ms | Индекс по PK |
+| POST создание | <300ms | BackgroundTasks для тяжёлого |
+| Агрегации | <500ms | Materialized view / Redis |
+
+Тяжёлые операции -- `BackgroundTasks`. Подробнее: `/perf` скилл.
 
 ## Alembic миграции
 
 ```bash
-# Создать миграцию
-alembic revision --autogenerate -m "description"
+alembic revision --autogenerate -m "description"  # создать
+alembic upgrade head                               # применить
+alembic current                                    # текущая версия
+```
 
-# Применить
-alembic upgrade head
+## OpenRouter (OpenAI-совместимый LLM gateway)
 
-# Проверить текущую версию
-alembic current
+Тот же OpenAI SDK, другой base_url -- экономия на LLM-вызовах.
+
+```python
+client = AsyncOpenAI(api_key=Config.OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+response = await client.chat.completions.create(
+    model="google/gemini-2.0-flash-001",
+    messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
+    temperature=0.3, max_tokens=2000
+)
+```
+
+| Модель | In/Out $/1M | Когда |
+|--------|-------------|-------|
+| `google/gemini-2.0-flash-001` | $0.10/$0.40 | Default |
+| `openai/gpt-4o-mini` | $0.15/$0.60 | Если нужен OpenAI |
+| `openai/gpt-4o` | $2.50/$10.00 | Сложные задачи |
+
+- **tiktoken:** для не-OpenAI моделей `get_encoding("cl100k_base")` -- `encoding_for_model` не знает чужих моделей
+- **Embeddings** остаются на прямом OpenAI API -- OpenRouter их не поддерживает
+
+## FK auto-create паттерн
+
+При INSERT с FK на users -- сначала ensure user exists, иначе ForeignKeyViolation:
+
+```python
+user = db.query(User).filter(User.user_id == request.user_id).first()
+if not user:
+    user = User(user_id=request.user_id, username=f"User_{request.user_id}")
+    db.add(user); db.commit()
+progress = UserProgress(user_id=request.user_id, task_id=request.task_id, ...)
+db.add(progress); db.commit()
 ```
 
 ## Reference-файлы
