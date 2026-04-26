@@ -14,6 +14,60 @@ type: playbook
 > - **Этот файл (SKILL.md)** — playbook (как развернуть ноду, как диагностировать, грабли)
 > - **platform/scripts/ops/vpn-watchdog/** — watchdog скрипты + deploy через `./deploy.sh vpn-watchdog`
 
+## Critical updates 2026-04-26 (latest — итоги migration session)
+
+### Новый стек (LIVE с 2026-04-25)
+**4 ноды, 2 non-KYC primary + 2 RU-affiliated legacy (декомиссия после 2026-05-08):**
+- **1984 IS** `185.112.147.229` (Reykjavík, Iceland) — non-KYC primary, оплата KZ-картой
+- **FlokiNET FI** `185.246.191.179` (Helsinki, FI location, IS company) — non-KYC primary
+- **Aeza HEL** `109.172.95.112` (legacy, OFAC, к декомиссии)
+- **Timeweb FRA** `72.56.107.55` (legacy, RU юрлицо, к декомиссии)
+
+**Subscription delivery:** CF round-robin `sub.ndsaudit.ru` → 4 origins + 4 direct edge mirrors `edge[1-4].veda-astro.ru`.
+
+**12 user accounts × per-user UUIDs** (Alex, Irina, Anna, Vadim, Nika + spare1-7). Subscription URL: `https://sub.ndsaudit.ru/sub/<hash>/<user>.txt`. Каждый юзер — 6 URIs (3 с 1984 + 3 с FlokiNET) после cleanup 2026-04-26.
+
+### Decision файл (formal)
+**`memory/decisions/2026-04-24-vpn-non-ru-migration.md`** — решение, обоснование, метрика uptime ≥99.5% за 2 недели, контрметрики (cost €30/мес, ops time ≤2h/мес, no identity link). Review 2026-05-08.
+
+### RUNBOOK
+**`platform/scripts/ops/vpn-watchdog/RUNBOOK.md`** — типы alerts, SLA, cascading failure scenarios. Telegram `@claude_alexey_bot` chat_id 814865188.
+
+### Bootstrap script (battle-tested, 7+ fix-коммитов)
+**`platform/scripts/ops/vpn-node/bootstrap.sh`** — деплой новой ноды одной командой. История фиксов:
+1. Xray 26.x x25519 output: `Private key:` → `PrivateKey:`, `Public key:` → `Password:` (обновить regex)
+2. `grep` на binary openssl output → нужен `-a` flag
+3. x-ui повторный запуск: сначала `chattr -i` на xray binary, иначе re-install падает
+4. `unattended-upgrades` держит dpkg lock → wait-loop перед apt
+5. Default `umask 077` ломает Caddy permissions → `umask 022` в начале скрипта
+6. SS-2022 multi-user **требует `aes-256-gcm`** (не `chacha20-poly1305` — single-user only)
+7. `apt install caddy` создаёт `/etc/caddy/` 750 → `chmod 755`
+8. `xrayTemplateConfig` с пустым `outbounds:[]` = чёрная Safari (нет интернета на клиенте) → дефолты freedom + blackhole
+9. **Дубликат `xrayTemplateConfig` в settings** (нет UNIQUE constraint) → `DELETE FROM settings WHERE key='xrayTemplateConfig'` ПЕРЕД insert
+10. `systemctl reload caddy` НЕ перечитывает env_file после смены CF_API_TOKEN → `restart`
+
+### Multi-user automation
+**`/tmp/add-vpn-user.py`** — gen UUID → insert в 4 нод x-ui DB → build subscription → push на 4 mirrors. Output: subscription URL + secrets в `~/Projects/Claude_Docs/VPN/users/<user>-secrets.json`.
+
+### Cleanup pattern (декомиссия endpoints)
+При выводе нод фильтровать sub-files по тегу URI `#<NodeName>-...`:
+```python
+def keep_uri(uri):
+    if "#" not in uri: return False
+    tag = uri.split("#", 1)[1].lower()
+    return any(p in tag for p in ["1984-is-", "floki-fi-"])
+```
+ВСЕ юзеры одной командой → push на все 4 mirrors → `curl` verify size+URI count.
+
+### Anti-patterns из retro
+- ❌ **«Refresh subscription без VPN»** — на consumer ISP (МТС/Билайн) ТСПУ блочит **CF IP ranges**, не только SNI. Свежий домен (`ndsaudit.ru`) не помогает. Subscription refresh = через активный VPN-туннель. Это **standard pattern**, не баг. **Не уходить в rabbit hole** Telegram-bot/IPFS/edge tricks для «sub без VPN».
+- ❌ **Hedge-words в audit** («скорее всего», «вероятно») — у CTO есть SSH/openssl/curl/dig. Любое утверждение = факт-чек ПЕРЕД отчётом.
+- ❌ **Identity linkage VEDA prod ↔ VPN watchdog** — watchdog на `109.73.194.217` (Timeweb Moscow VEDA prod) делает probes на blocked-CF endpoints. Фиксированный риск, миграция watchdog на standalone VPS отложена до review.
+- ❌ **Cloudzy** (Iran-linked) — если BuyVM/другие out-of-stock и редиректит на Cloudzy = **STOP**, не использовать. Halcyon 2023: ~50% threat actors хостятся там.
+- ❌ **Hetzner** — KYC паспорт, strict abuse policy, prior bans на LET (2024-25). Alex отклонил.
+
+---
+
 ## Critical updates 2026-04-24 (не повторять старые ошибки)
 
 ### Факты зафиксированные в этой сессии
@@ -139,7 +193,18 @@ ssh root@109.73.194.217 'timeout 10 openssl s_client -connect SNI:443 -servernam
 
 **КРИТИЧНО: x-ui `allocate` поле** в inbound **ломает** Reality! При ручной вставке в DB ставить NULL. Смотри граблю #2.
 
-## Playbook: деплой новой ноды (30-45 минут)
+## Playbook: деплой новой ноды
+
+**SSOT:** `platform/scripts/ops/vpn-node/bootstrap.sh` — battle-tested на 1984 IS + FlokiNET FI (7+ fix-коммитов в истории, см. §«Critical updates 2026-04-26»). Использовать его, не копировать ручные шаги ниже.
+
+```bash
+cd ~/Projects/platform/scripts/ops/vpn-node
+./bootstrap.sh <new_ip> <node_name>  # node_name = тег для URI, e.g. "1984-IS" / "FLOKI-FI"
+```
+
+После bootstrap → run `/tmp/add-vpn-user.py` для каждого юзера, чтобы добавить клиентов в новую ноду + обновить subscription.
+
+### Ручные шаги (legacy reference, для понимания что делает bootstrap)
 
 ### Предусловия
 - SSH root на VPS, Ubuntu 24.04
@@ -452,7 +517,62 @@ ping -c 10 edge.veda-astro.ru
 - HTTP-01 challenge фейлит если proxied=true в CF (CF TLS intercept).
 - Решение: использовать **DNS-01** (через CF API). Собрать Caddy с `caddy-dns-cloudflare` plugin.
 
-## 8 проверенных грабель (из продакшн-опыта)
+## Грабли (продакшн-опыт)
+
+### 9. SS-2022 method для multi-user
+**Симптом:** При попытке добавить второго клиента в SS inbound — Xray crash или клиенты не могут подключиться.
+**Причина:** `chacha20-ietf-poly1305` поддерживает только 1 user. Multi-user требует AEAD-2022 family.
+**Фикс:** `2022-blake3-aes-256-gcm` (или `aes-128-gcm`). Password = base64 32 bytes.
+
+### 10. xrayTemplateConfig с пустым outbounds = чёрный интернет
+**Симптом:** Клиент подключается, handshake OK, но в Safari ничего не грузится (чёрный экран).
+**Причина:** x-ui template без default `freedom` outbound — Xray не знает куда роутить.
+**Фикс:** при создании template обязательно `outbounds: [{tag:"direct", protocol:"freedom"}, {tag:"blocked", protocol:"blackhole"}]`.
+
+### 11. Дубликат xrayTemplateConfig (нет UNIQUE на settings.key)
+**Симптом:** Изменения в template не применяются после restart x-ui.
+**Причина:** x-ui SQLite `settings` таблица не имеет UNIQUE на key. INSERT создаёт дубль, читается старая запись.
+**Фикс:** `DELETE FROM settings WHERE key='xrayTemplateConfig'` ПЕРЕД INSERT.
+
+### 12. Caddy reload не перечитывает env_file
+**Симптом:** Поменял `CF_API_TOKEN` в `/etc/caddy/.env.vpn`, `systemctl reload caddy` — старый токен в памяти, ACME фейлит.
+**Причина:** systemd `EnvironmentFile=` читается только при старте процесса, не при reload.
+**Фикс:** `systemctl restart caddy` (не reload) после смены env.
+
+### 13. unattended-upgrades держит dpkg lock
+**Симптом:** Bootstrap скрипт падает на `apt install` с `Could not get lock /var/lib/dpkg/lock-frontend`.
+**Причина:** Свежая VPS — unattended-upgrades в первые минуты после boot держит lock.
+**Фикс:** wait-loop в начале скрипта:
+```bash
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 5; done
+```
+
+### 14. Xray 26.x переименовал output `xray x25519`
+**Симптом:** Скрипт парсит `Private key:` / `Public key:` — пустые переменные.
+**Причина:** Xray 26.0+ отдаёт `PrivateKey:` / `Password:` (для совместимости с REALITY format).
+**Фикс:** `awk '/PrivateKey:/{print $NF}'` + `awk '/Password:/{print $NF}'` (regex `/Public/` тоже сработает на старых версиях).
+
+### 15. `chattr +i` блокирует re-deploy того же бинарника
+**Симптом:** Повторный запуск bootstrap.sh падает на копировании xray binary: `Operation not permitted`.
+**Причина:** Первый запуск поставил `chattr +i` на immutable.
+**Фикс:** `chattr -i /usr/local/x-ui/bin/xray-linux-amd64 2>/dev/null || true` ПЕРЕД cp.
+
+### 16. ТСПУ блочит CF IP ranges на consumer ISP (МТС/Билайн)
+**Симптом:** `https://sub.ndsaudit.ru/sub/...` не открывается с iPhone LTE без VPN, хотя домен свежий.
+**Причина:** ТСПУ режет **CF IP ranges**, не SNI. Любой домен через CF (proxied=true) недоступен.
+**Фикс:** subscription refresh через активный VPN-туннель — стандартный pattern. Не пытаться обходить через Telegram bot / IPFS / edge tricks (всё работает только если уже есть VPN).
+
+### 17. Один edge HTTP down ≠ critical
+**Симптом:** Watchdog alert `🔴 VPN HTTP bad: edge3.veda-astro.ru status=502`.
+**Причина:** Caddy crash на одной ноде / ACME cert renewal stuck.
+**Фикс приоритет:** если ≥2 edges работают → subscription отдаст альтернативу через CF round-robin → fix в течение 24ч, не emergency. Если 3+ down — ТСПУ/CF mass-block, switch на direct Reality IP `:2053`.
+
+### 18. INFO_*_REALITY blocked from Moscow = false-positive
+**Симптом:** Watchdog state file имеет записи `INFO_1984_REALITY=1`, но Reality реально работает с iPhone LTE.
+**Причина:** Timeweb Moscow имеет outbound egress filter (большинство foreign IPs blocked даже если ТСПУ их не блочит).
+**Фикс:** игнорировать `INFO_*` алерты — это не indicator реального состояния consumer ISP. Реальный signal = `HTTP_*` + `SUB_*`. Force clear: `sed -i '/^INFO_/d' /var/run/vpn-watchdog-endpoints.state`.
+
+## 8 проверенных грабель (из продакшн-опыта 2026-04-24 и ранее)
 
 ### 1. `www.figma.com` / popular SNI — не проверен из РФ
 **Симптом:** Reality подключается но ТСПУ через N дней начинает рубить.
@@ -551,16 +671,15 @@ done
 ## Roadmap улучшений
 
 **P0 (done 2026-04-24):** ✅ Atomic SNI change, ✅ CF fronting FRA, ✅ AWG FRA, ✅ UFW harden, ✅ Xray pin
+**P1 (done 2026-04-25/26):** ✅ Migration на non-KYC (1984 + FlokiNET), ✅ Subscription mirror 4 origins + 4 edges, ✅ Watchdog + Telegram alerts, ✅ Multi-user support (12 accounts), ✅ bootstrap.sh battle-tested, ✅ RUNBOOK + decision file, ✅ Cleanup legacy URIs (12 × 6)
 
-**P1 (планируется):**
-- [ ] **XHTTP transport** добавить как 5-й путь (по Хабр ресёрчу — горизонт 5-7 лет vs 3-9 мес Reality)
-- [ ] **Mirror subscription на FRA** — если Aeza лежит, клиенты обновляют подписку с FRA
-- [ ] **Monitoring + Telegram alerts** — watchdog на обеих нодах
-
-**P2 (месяцы вперёд):**
-- [ ] **Третья нода** на не-Aeza/не-Timeweb провайдере (IncogNet/BuyVM)
+**P2 (post review 2026-05-08):**
+- [ ] **Cancel Aeza + Timeweb FRA** — после подтверждения uptime ≥99.5%
+- [ ] **Migrate watchdog на standalone VPS** (Selectel/VDSina ~150₽/мес) — устранить identity link VEDA prod ↔ VPN infra
+- [ ] **XHTTP transport** добавить как fallback-путь (горизонт 5-7 лет vs 3-9 мес Reality)
 - [ ] **Автоматическая ротация Reality keys** каждые 90 дней
-- [ ] **CF Workers XHTTP** (top-tier схема 2026, требует dev-работы)
+- [ ] **Bus-factor 2** — 1Password Vault setup для Ирины/co-pilot
+- [ ] **Регрессионные тесты bootstrap.sh** — чтобы 7 фиксов не разъехались при следующем апдейте Xray/x-ui
 
 ## P0 runbook — команды выполненные 2026-04-24
 
