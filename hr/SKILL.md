@@ -174,6 +174,91 @@ track_record:
 
 Детали: `~/.claude/projects/-Users-alex-Projects/memory/hr-offer-senior-delegation-pattern.md`
 
+## KPI Methodology — что считается «настоящим KPI»
+
+Принцип «мы поставим KPI» обманчив — без 4 атрибутов это не KPI, а пожелание. Источник: [Asana KPI Templates 2026](https://asana.com/templates/kpi-key-performance-indicators), [Atlassian Five agile metrics](https://www.atlassian.com/agile/project-management/metrics).
+
+**4 обязательных атрибута настоящего KPI:**
+1. **Measurable target** (число, не «хорошо»)
+2. **Timeframe** (90 дней, квартал — не «постоянно»)
+3. **Data source** (откуда дёргается автоматически — БД/таск-трекер; ручной отчёт не считается)
+4. **Frequency** (раз в день/неделя/месяц)
+
+Если хоть один отсутствует — это не KPI.
+
+### Anti-Goodhart: парные shadow-metrics
+
+[Goodhart's Law (Splunk)](https://www.splunk.com/en_us/blog/learn/goodharts-law.html), [KPItree](https://kpitree.co/guides/frameworks/goodharts-law), [Truly Intelligent](https://trulyintelligent.business/strategy/using-goodharts-law/): «When a measure becomes a target, it ceases to be a good measure».
+
+Single-number governance провоцирует gaming. Один KPI = гарантированный гейминг (дробление задач, фиктивные тикеты, выкат мусора в срок). 3-4 сбалансированных + парные shadow-metrics — экономически невыгодно гейминговать.
+
+**Правило**: каждый KPI обязан идти в паре с shadow-метрикой, представляющей foreseeable harm displacement. Пример для PM:
+- KPI «график без срывов» **парная** «launch quality / 0 P0-инцидентов» — иначе PM выкатит мусор в срок
+- KPI «звонки/час продаж» **парная** «retention 90 days» — иначе менеджер дожмёт неподходящую аудиторию
+- KPI «количество AI-промптов» **парная** «rework rate» — иначе кандидат прогонит шум
+
+### Лимит KPI на роль
+
+3-5 KPI на роль ([Quantive: Limiting OKRs and KPIs simplifies management](https://quantive.com/resources/articles/okrs-vs-kpis); [Duperrin 2025](https://www.duperrin.com/english/2025/08/07/goodhart-law-kpi/)). Больше 5 = бюрократия, неуправляемая мотивация. На ИС — не больше **2 KPI**.
+
+### KPI vs OKR — когда что
+
+| Аспект | KPI | OKR |
+|---|---|---|
+| Цель | Мониторинг здоровья | Драйв изменений |
+| Период | Постоянно | Квартал |
+| Стрейч | Нет, цель достигаема | Да, 70% achievement = норма |
+| ИС-роль | ✅ Только KPI | ❌ Стрейч → +15% turnover (Gallup 2025) |
+| После ИС | KPI + OKR | Прибавляются |
+
+Источник: [Asana OKR vs KPI 2025](https://asana.com/resources/okr-vs-kpi), [Andy Grove origin story](https://www.whatmatters.com/articles/the-origin-story).
+
+### Anti-patterns KPI
+
+❌ **Замер количества задач** — Закон Гудхарта в чистом виде. Гейминг через дробление.
+❌ **Single-number governance** — один KPI = гейминг неизбежен.
+❌ **KPI без owner'а замера** — если нет автоматического источника данных, метрика субъективна → гейминг через ручной отчёт.
+❌ **KPI который кандидат сам гейминговать** — separation of duties: тот, кого судят по метрике, не должен ею владеть.
+❌ **>5 KPI на роль** — когнитивная перегрузка, мотивация не работает.
+❌ **Стрейч-цели на ИС** — Gallup 2025: +28% engagement, но +15% voluntary turnover.
+
+### Привязка к Vedantica-инфраструктуре
+
+VEDA Base ([base.myveda.ru](https://base.myveda.ru)) — наша tasks-платформа. Модель Task имеет `dueDate`, `completedAt`, `assigneeId`, `priority`, `projectId`. Это даёт автоматический замер для PM:
+
+| KPI | Формула из base | Owner замера |
+|---|---|---|
+| Schedule Adherence | `COUNT(completedAt <= dueDate) / COUNT(closed OR overdue)` per assignee | Зам-агент cron |
+| Cycle Time | `AVG(completedAt - createdAt)` per assignee | Зам-агент |
+| Overdue Discipline | `COUNT(dueDate < NOW() AND completedAt IS NULL AND status != 'CANCELLED')` | Зам-агент daily |
+| Launch P0-rate | tasks with label `P0` linked to launch | Алекс/2-й человек, не сам PM |
+
+**Зам-агент** уже имеет ready-tools: `get_execution_discipline`, `get_overdue_tasks`, `get_active_sprint`, `get_users`. Не строй новые — используй существующие.
+
+**Эскалации** (research recommendation 3) — не «надсмотрщик», а learning-loop:
+- Cron-Зам раз в день: дайджест в личный TG-канал PM (его метрики rolling 30/60/90)
+- Эскалация Алексу — только по 3 триггерам: (а) задача overdue >3 дней без статуса, (б) blocker без owner >24 часов, (в) запуск с риском срыва >50% по progress на T-7
+- P0-инциденты регистрирует не PM, а ты или второй человек (separation of duties)
+
+### Структура компенсации на ИС
+
+Источник: [TheDigitalProjectManager Salary Guide 2025](https://thedigitalprojectmanager.com/career/project-manager-salary-guide/), [Levels.fyi Skillbox PM](https://www.levels.fyi/companies/skillbox/salaries/product-manager).
+
+- **На ИС**: 100% фикс (минимум коридора), **gate-бонус не процент**, а одноразовая выплата за прохождение KPI-gate на 90-й день. Прошёл оба KPI → +фикс к окладу + разовый бонус. Один из двух не прошёл → продление ИС на 30 дней. Оба не прошли → расставание.
+- **После ИС**: фикс (середина-верх коридора) + квартальный бонус 20-30% от месячного фикса при выполнении 2 KPI + 1 OKR (где появляются ₽-инициативы).
+- **OKR (квартал)**: «инициативы с ₽-эффектом» — это OKR, не KPI. На ИС не ставится.
+
+### Чек-лист перед публикацией KPI кандидату
+
+- [ ] ≤2 KPI на ИС, ≤4 после ИС
+- [ ] Каждый KPI имеет measurable target + timeframe + data source + frequency
+- [ ] Каждый KPI имеет парную shadow-метрику (anti-Goodhart)
+- [ ] Источник замера автоматический (БД/таск-трекер), не ручной отчёт
+- [ ] Owner замера ≠ сам сотрудник (separation of duties)
+- [ ] На ИС — без стрейч-целей; gate-бонус, не proportional
+- [ ] Эскалации идут через агентов (Зам), не вручную
+- [ ] Привязка к base.myveda.ru или другому существующему трекеру
+
 ## Reference-файлы
 
 | Файл | Что внутри |
