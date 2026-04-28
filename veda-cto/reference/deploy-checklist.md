@@ -40,6 +40,31 @@
 
 **Если проекта нет в `deploy.sh` — деплой запрещён до добавления профиля.**
 
+## Staging environment (W4.6, since 2026-04-29)
+
+`/root/astro-calc-staging/` на проде 217 — отдельный compose stack:
+- Gateway 127.0.0.1:**8094** (8093 занят prod `veda-geo`)
+- Planet 127.0.0.1:60057, Lagna 127.0.0.1:60051, charts-db 127.0.0.1:5443
+- Containers с суффиксом `-staging`: `astro-charts-db-staging`, etc.
+- Pinned to git ref via `STAGING_REF` env (default `prod-snapshot-2026-04-26`)
+
+**Workflow для проверки feature ветки на staging:**
+```bash
+# 1. Push feature branch to AstroAcademy/AstrologyCore
+# 2. Bootstrap staging (only first time):
+bash platform/scripts/ops/staging-bootstrap.sh --push-and-run --provision --restore-from-prod-dump --build --up
+
+# 3. Promote feature ref to staging:
+ssh root@109.73.194.217 'STAGING_REF=feature/wave1-X bash /root/scripts/ops/setup-staging-stack.sh --build --up'
+
+# 4. Run snapshot-diff against :8094:
+python3 platform/scripts/astro/snapshot-diff.py --base-url http://109.73.194.217:8094/api/v2
+
+# 5. Если 180/180 → merge PR → deploy.sh astro-gateway (prod). Если diff → revert в feature, prod не задет.
+```
+
+Staging = 127.0.0.1 only (no public DNS). RAM ~3-4GB pressure на 217 (16GB total, 13GB используется prod, ~17GB MemAvailable перед staging up).
+
 ## Astro stack — деплой кода Core/Gateway/Lagna/Planet
 
 Особенности (важно для Wave 1 правок):
@@ -86,6 +111,20 @@ Codex запускается через `bash platform/scripts/codex_launcher.sh
 11. **gh auth context matters**: AgentAstro1 для AstroAcademy, VedaAstro для VedaAstro/platform-ops
 12. **pg_stat_statements может быть `shared_preload_libraries` НО не `CREATE EXTENSION`** — две разные вещи. После каждого DB hardening: `SELECT extname FROM pg_extension WHERE extname='pg_stat_statements';` подтверждает что extension реально создана в нужной БД. Без этого top-20 slow queries недоступен.
 13. **UFW на проде безопасно**: `ss -tlnp | grep 0\.0\.0\.0` → allowlist все текущие порты → enable. Self-test SSH ПОСЛЕ enable обязателен (recovery: Timeweb console + `ufw disable`).
+
+## SSH access (since 2026-04-29 W0.J-3)
+
+- `ssh root@109.73.194.217` — by key only, password disabled (`PermitRootLogin prohibit-password`).
+- `ssh veda-ops@109.73.194.217` — non-root admin user, NOPASSWD sudo. Use for ad-hoc ops; root@... eventually deprecates.
+- Migration plan: переписать deploy.sh + bot scripts на `veda-ops@... + sudo` → потом `PermitRootLogin no`.
+
+## DR / PITR (since 2026-04-29 W4.4)
+
+- System Postgres :5432 — archive_mode=on, WAL streamed continuously to Selectel S3 (~60s RPO).
+- Charts DB :5433 — daily logical dump only (24h RPO; W4.4 Phase 2 todo: WAL archiving for charts DB).
+- `/etc/veda-ops.env` — daily encrypted backup to Selectel S3 (cron 04:30 MSK).
+- Restore procedure: `docs/runbooks/DISASTER-RECOVERY-astro.md` (3 scenarios, RTO 30min-1h targets).
+- Quarterly DR drill cadence: first run 2026-05-12.
 
 ## Серверные пути (PM2 читает отсюда)
 
